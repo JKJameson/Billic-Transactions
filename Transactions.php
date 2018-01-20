@@ -120,9 +120,7 @@ class Transactions {
 				exit;
 			}
 		}
-		if (isset($_GET['POST'])) {
-			$_POST = json_decode(base64_decode($_GET['POST']) , true);
-		}
+
 		$billic->module('ListManager');
 		$billic->modules['ListManager']->configure(array(
 			'search' => array(
@@ -152,6 +150,7 @@ class Transactions {
 				'resale' => 'checkbox',
 			) ,
 		));
+
 		$where = '';
 		$where_values = array();
 		if (isset($_POST['search'])) {
@@ -203,7 +202,6 @@ class Transactions {
 		$total = $total[0]['COUNT(*)'];
 		$pagination = $billic->pagination(array(
 			'total' => $total,
-			'list_manager' => $billic->module['ListManager'],
 		));
 		echo $pagination['menu'];
 		$func_array_select2[0] = 'SELECT * FROM ' . $func_array_select2[0] . ' ORDER BY `date` DESC LIMIT ' . $pagination['start'] . ',' . $pagination['limit'];
