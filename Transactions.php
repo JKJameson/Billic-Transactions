@@ -48,10 +48,9 @@ class Transactions {
 					'amount' => (0 - $_POST['amount']) ,
 					'vatrate' => $_POST['vatrate'],
 					'transid' => $_POST['gateway_id'],
-					'resale' => $_POST['resale'],
+					'resale' => (empty($_POST['resale']) ? 0 : 1) ,
 					'type' => $_POST['type'],
-					'eu' => $_POST['eu'],
-					'resale' => $_POST['resale'],
+					'eu' => (empty($_POST['eu']) ? 0 : 1) ,
 				));
 				$_status = array(
 					'added',
@@ -120,7 +119,6 @@ class Transactions {
 				exit;
 			}
 		}
-
 		$billic->module('ListManager');
 		$billic->modules['ListManager']->configure(array(
 			'search' => array(
@@ -150,7 +148,6 @@ class Transactions {
 				'resale' => 'checkbox',
 			) ,
 		));
-
 		$where = '';
 		$where_values = array();
 		if (isset($_POST['search'])) {
