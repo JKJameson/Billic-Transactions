@@ -57,6 +57,7 @@ class Transactions {
 					'Transaction ID ' . $id . ' (' . $_POST['date'] . ')'
 				);
 			}
+			$_POST = json_decode(base64_decode($_POST['search_post']) , true);
 		}
 		if (isset($_POST['delete'])) {
 			if (!$billic->user_has_permission($billic->user, 'Transactions_Delete')) {
@@ -109,6 +110,63 @@ class Transactions {
 					$i++;
 				}
 				echo '<tr><td colspan="20" align="center"><input type="submit" class="btn btn-success" name="update" value="Update &raquo;"></td></tr>';
+				echo '</table></form>';
+				echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.4.0/css/bootstrap-datepicker.min.css">';
+				echo '<script>addLoadEvent(function() { $.getScript( "https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.4.0/js/bootstrap-datepicker.min.js", function( data, textStatus, jqxhr ) { ';
+				for ($x = 0;$x <= $i;$x++) {
+					echo '$( "#date_' . $x . '" ).datepicker({ format: "yyyy-mm-dd" }); ';
+				}
+				echo '}); });</script>';
+				exit;
+			}
+		}
+		if (isset($_POST['clone'])) {
+			if (!$billic->user_has_permission($billic->user, 'Transactions_Add')) {
+				err('You do not have permission to add transactions');
+			}
+			if (isset($_POST['addCloneTransactions'])) {
+				foreach ($_POST['date'] as $id => $date) {
+					$date = strtotime($date);
+					if (!$date) {
+						$billic->error('Unable to change transaction ' . $id . ' because the date is invalid');
+						continue;
+					}
+					$id = $db->insert('transactions', array(
+						'date' => $date,
+						'description' => $_POST['description'][$id],
+						'amount' => $_POST['amount'][$id],
+						'vatrate' => $_POST['vatrate'][$id],
+						'transid' => $_POST['transid'][$id],
+						'resale' => (empty($_POST['resale'][$id]) ? 0 : 1),
+						'type' => $_POST['type'][$id],
+						'eu' => (empty($_POST['eu'][$id]) ? 0 : 1) ,
+					));
+				}
+				$billic->status = 'updated';
+				$_POST = json_decode(base64_decode($_POST['search_post']) , true);
+			} else {
+				if (empty($_POST['ids'])) {
+					err('No transactions were selected to be edited.');
+				}
+				$billic->set_title('Admin/Clone Transactions');
+				echo '<h1><i class="icon-money"></i> Clone Transactions</h1>';
+				$billic->show_errors();
+				echo '<form method="POST"><input type="hidden" name="clone" value="1"><input type="hidden" name="search_post" value="' . $_POST['search_post'] . '">';
+				echo '<table class="table table-striped"><tr><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>VAT</th><th>Intra-EU</th><th>Resale</th><th>Gateway</th><th>Gateway ID</th></tr>';
+				$i = 0;
+				foreach ($_POST['ids'] as $id => $crap) {
+					$t = $db->q('SELECT * FROM `transactions` WHERE `id` = ?', $id);
+					$t = $t[0];
+					echo '<tr><td><input type="text" class="form-control" id="date_' . $i . '" name="date[' . $t['id'] . ']" value="' . safe(date('Y-m-d', $t['date'])) . '" style="width: 85px"></td><td><input type="text" class="form-control" name="description[' . $t['id'] . ']" value="' . safe($t['description']) . '"></td><td><select class="form-control" name="type[' . $t['id'] . ']">';
+					echo '<option value="service"' . ($t['type'] == 'service' ? ' selected' : '') . '>Service</option>';
+					echo '<option value="goods"' . ($t['type'] == 'goods' ? ' selected' : '') . '>Goods</option>';
+					if ($t['type'] == '') {
+						echo '<option value=""' . ($t['type'] == '' ? ' selected' : '') . '></option>';
+					}
+					echo '</select></td><td><input type="text" class="form-control" name="amount[' . $t['id'] . ']" value="' . safe($t['amount']) . '" style="width: 75px"></td><td><input type="text" class="form-control" name="vatrate[' . $t['id'] . ']" value="' . safe($t['vatrate']) . '" style="width: 50px"></td><td><input type="checkbox" name="eu[' . $t['id'] . ']"' . ($t['eu'] == 1 ? ' checked' : '') . ' value="1"></td><td><input type="checkbox" name="resale[' . $t['id'] . ']"' . ($t['resale'] == 1 ? ' checked' : '') . ' value="1"></td><td><input type="text" class="form-control" name="gateway[' . $t['id'] . ']" value="' . safe($t['gateway']) . '"></td><td><input type="text" class="form-control" name="transid[' . $t['id'] . ']" value="' . safe($t['transid']) . '"></td></tr>';
+					$i++;
+				}
+				echo '<tr><td colspan="20" align="center"><input type="submit" class="btn btn-success" name="addCloneTransactions" value="Add Transactions &raquo;"></td></tr>';
 				echo '</table></form>';
 				echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.4.0/css/bootstrap-datepicker.min.css">';
 				echo '<script>addLoadEvent(function() { $.getScript( "https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.4.0/js/bootstrap-datepicker.min.js", function( data, textStatus, jqxhr ) { ';
@@ -212,7 +270,7 @@ class Transactions {
 		echo $billic->modules['ListManager']->search_box();
 		echo $billic->modules['ListManager']->add_box();
 		echo '<div style="float: right;padding-right: 40px;">Showing ' . $pagination['start_text'] . ' to ' . $pagination['end_text'] . ' of ' . $total . ' Transactions</div>' . $billic->modules['ListManager']->search_link() . $billic->modules['ListManager']->add_link();
-		echo '<form method="POST">With Selected: <input type="hidden" name="search_post" value="' . base64_encode(json_encode($_POST)) . '"> <button type="submit" class="btn btn-xs btn-primary" name="edit"><i class="icon-edit-write"></i> Edit</button> <button type="submit" class="btn btn-xs btn-danger" name="delete" onclick="return confirm(\'Are you sure you want to delete the selected transactions?\');"><i class="icon-remove"></i> Delete</button><br><table class="table table-striped"><tr><th><input type="checkbox" onclick="checkAll(this, \'ids\')"></th><th>User</th><th>Invoice</th><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>VAT</th><th>Intra-EU</th><th>Gateway</th><th>Gateway ID</th><th>Resale</th></tr>';
+		echo '<form method="POST">With Selected: <input type="hidden" name="search_post" value="' . base64_encode(json_encode($_POST)) . '"> <button type="submit" class="btn btn-xs btn-primary" name="edit"><i class="icon-edit-write"></i> Edit</button> <button type="submit" class="btn btn-xs btn-success" name="clone"><i class="icon-plus"></i> Clone</button> <button type="submit" class="btn btn-xs btn-danger" name="delete" onclick="return confirm(\'Are you sure you want to delete the selected transactions?\');"><i class="icon-remove"></i> Delete</button><br><table class="table table-striped"><tr><th><input type="checkbox" onclick="checkAll(this, \'ids\')"></th><th>User</th><th>Invoice</th><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>VAT</th><th>Intra-EU</th><th>Gateway</th><th>Gateway ID</th><th>Resale</th></tr>';
 		if (empty($transactions)) {
 			echo '<tr><td colspan="20">No transactions matching filter.</td></tr>';
 		}
