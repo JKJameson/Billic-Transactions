@@ -181,14 +181,15 @@ class Transactions {
 		$billic->modules['ListManager']->configure(array(
 			'search' => array(
 				'description' => 'text',
+				'gateway' => 'text',
 				'gateway_id' => 'text',
-				'date_from' => 'date',
 				'amount' => 'text',
 				'show' => array(
 					'all',
 					'payments',
 					'expenditures'
-				) ,
+				),
+				'date_from' => 'date',
 				'date_to' => 'date',
 			) ,
 			'add_title' => 'Add an Expenditure',
@@ -216,6 +217,10 @@ class Transactions {
 			if (!empty($_POST['amount'])) {
 				$where.= '`amount` = ? AND ';
 				$where_values[] = $_POST['amount'];
+			}
+			if (!empty($_POST['gateway'])) {
+				$where.= '`gateway` LIKE ? AND ';
+				$where_values[] = '%' . $_POST['gateway'] . '%';
 			}
 			if (!empty($_POST['gateway_id'])) {
 				$where.= '`transid` = ? AND ';
