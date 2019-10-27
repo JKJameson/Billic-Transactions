@@ -4,12 +4,13 @@ class Transactions {
 		'name' => 'Transactions',
 		'admin_menu_category' => 'Accounting',
 		'admin_menu_name' => 'Transactions',
-		'description' => 'Lists the payments of invoices and allows expenditures to be entered into Billic.',
+		'description' => 'Lists the payments of invoices and allows expenditures to be entered into billic.',
 		'admin_menu_icon' => '<i class="icon-money-banknote"></i>',
 		'permissions' => array(
 			'Transactions_Add',
 			'Transactions_Delete',
-			'Transactions_Edit'
+			'Transactions_Edit',
+			'Transactions_Attach'
 		) ,
 	);
 	function admin_area() {
@@ -177,6 +178,64 @@ class Transactions {
 				exit;
 			}
 		}
+		if (empty($billic->errors) && !empty($_FILES['transaction'])) {
+			if (!$billic->user_has_permission($billic->user, 'Transactions_Attach')) {
+				err('You do not have permission to attach files to transactions');
+			}
+			foreach ($_FILES['transaction']['tmp_name'] as $key => $tmp_name) {
+				if (empty($tmp_name)) continue;
+				$transaction = $db->q('SELECT * FROM `transactions` WHERE `id` = ?', $key)[0];
+				if (empty($transaction)) {
+						$billic->errors[] = 'Invalid transaction';
+				} else
+				if ($_FILES['transaction']['error'][$key] != UPLOAD_ERR_OK) {
+					if ($_FILES['files']['error'][$key] != UPLOAD_ERR_NO_FILE) {
+						$billic->errors[] = 'There was an error while uploading the file: ' . $_FILES['transaction']['name'][$key];
+					}
+				} else {
+					
+					$filename = basename($_FILES['transaction']['name'][$key]);
+					$filename = str_replace(' ', '_', $filename);
+					$safe_chars = 'a b c d e f g h i j k l m n o p q r s t u v w x y z 0 1 2 3 4 5 6 7 8 9 _ .';
+					$safe_chars = explode(' ', $safe_chars);
+					$safe_name = '';
+					for ($i = 0;$i < strlen($filename);$i++) {
+						if (!in_array(strtolower($filename[$i]) , $safe_chars)) {
+							continue;
+						}
+						$safe_name.= $filename[$i];
+					}
+					$filename = $safe_name;
+					$filename = preg_replace('/([\.]+)/', '.', $filename);
+					$filename = preg_replace('/([_]+)/', '_', $filename);
+					$filename = $key . '_' . basename($filename);
+					if (!is_dir('../attachments/transactions/'))
+						mkdir('../attachments/transactions/') or err('Failed to create the folder ../attachments/transactions/');
+					move_uploaded_file($tmp_name, '../attachments/transactions/' . $filename);
+					
+					$attachments = $transaction['attachments'];
+					if (!empty($attachments))
+						$attachments .= '|';
+					$attachments .= $filename;
+					$attachments = explode('|', $attachments);
+					$attachments = array_unique($attachments);
+					$attachments = implode('|', $attachments);
+					$db->q('UPDATE `transactions` SET `attachments` = ? WHERE `id` = ?', $attachments, $transaction['id']);
+				}
+			}
+		}
+		if (isset($_GET['Attachment'])) {
+			$billic->disable_content();
+			$attachment = basename($_GET['Attachment']);
+			$im = new imagick('../attachments/transactions/'.$attachment.'[0]');
+			$im->setImageFormat('jpg');
+			$im->thumbnailImage(150, 0);
+			$im = $im->flattenImages();
+			header('Content-Type: image/jpeg');
+			echo $im;
+			exit;
+		}
+
 		$billic->module('ListManager');
 		$billic->modules['ListManager']->configure(array(
 			'search' => array(
@@ -275,7 +334,7 @@ class Transactions {
 		echo $billic->modules['ListManager']->search_box();
 		echo $billic->modules['ListManager']->add_box();
 		echo '<div style="float: right;padding-right: 40px;">Showing ' . $pagination['start_text'] . ' to ' . $pagination['end_text'] . ' of ' . $total . ' Transactions</div>' . $billic->modules['ListManager']->search_link() . $billic->modules['ListManager']->add_link();
-		echo '<form method="POST">With Selected: <input type="hidden" name="search_post" value="' . base64_encode(json_encode($_POST)) . '"> <button type="submit" class="btn btn-xs btn-primary" name="edit"><i class="icon-edit-write"></i> Edit</button> <button type="submit" class="btn btn-xs btn-success" name="clone"><i class="icon-plus"></i> Clone</button> <button type="submit" class="btn btn-xs btn-danger" name="delete" onclick="return confirm(\'Are you sure you want to delete the selected transactions?\');"><i class="icon-remove"></i> Delete</button><br><table class="table table-striped"><tr><th><input type="checkbox" onclick="checkAll(this, \'ids\')"></th><th>User</th><th>Invoice</th><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>VAT</th><th>Intra-EU</th><th>Gateway</th><th>Gateway ID</th><th>Resale</th></tr>';
+		echo '<form method="POST" enctype="multipart/form-data">With Selected: <input type="hidden" name="search_post" value="' . base64_encode(json_encode($_POST)) . '"> <button type="submit" class="btn btn-xs btn-primary" name="edit"><i class="icon-edit-write"></i> Edit</button> <button type="submit" class="btn btn-xs btn-success" name="clone"><i class="icon-plus"></i> Clone</button> <button type="submit" class="btn btn-xs btn-danger" name="delete" onclick="return confirm(\'Are you sure you want to delete the selected transactions?\');"><i class="icon-remove"></i> Delete</button><br><table class="table table-striped"><tr><th><input type="checkbox" onclick="checkAll(this, \'ids\')"></th><th>User</th><th>Invoice</th><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>VAT</th><th>Intra-EU</th><th>Gateway</th><th>Gateway ID</th><th>Resale</th></tr>';
 		if (empty($transactions)) {
 			echo '<tr><td colspan="20">No transactions matching filter.</td></tr>';
 		}
@@ -294,7 +353,22 @@ class Transactions {
 				$transaction['description'] = substr($transaction['description'], 0, -4);
 				$transaction['description'] = preg_replace('~Service #([0-9]+) ~', '<a href="/Admin/Services/ID/$1/">$0</a>', $transaction['description']);
 			}
-			echo '<tr><td><input type="checkbox" name="ids[' . $transaction['id'] . ']"></td><td><a href="/Admin/Users/ID/' . $transaction['userid'] . '/">' . $transaction['userid'] . '</a></td><td><a href="/Admin/Invoices/ID/' . $transaction['invoiceid'] . '/">' . $transaction['invoiceid'] . '</a></td><td>' . $billic->date_display($transaction['date']) . '</td><td>' . $transaction['description'] . '</td><td>' . ucwords($transaction['type']) . '</td><td>' . $amount . '</td><td>';
+			if ($transaction['userid']>0) {
+				$details = '<td><a href="/Admin/Users/ID/' . $transaction['userid'] . '/">' . $transaction['userid'] . '</a></td><td><a href="/Admin/Invoices/ID/' . $transaction['invoiceid'] . '/">' . $transaction['invoiceid'] . '</a></td>';
+			} else {
+				$details = '<td colspan="2">';
+				if (empty($transaction['attachments'])) {
+					$details .= '<input type="file" name="transaction['.$transaction['id'].']" onChange="form.submit();">';
+				} else {
+					$attachments = explode('|', $transaction['attachments']);
+					foreach($attachments as $attachment) {
+						$details .= '<img src="Attachment/'.$attachment.'/"><br>';	
+					}
+				}
+				
+				$details .= '</td>';	
+			}
+			echo '<tr><td><input type="checkbox" name="ids[' . $transaction['id'] . ']"></td>'.$details.'<td>' . $billic->date_display($transaction['date']) . '</td><td>' . $transaction['description'] . '</td><td>' . ucwords($transaction['type']) . '</td><td>' . $amount . '</td><td>';
 			if (is_numeric($transaction['vatrate'])) {
 				echo round($transaction['vatrate'], 2) . '%';
 			} else {
