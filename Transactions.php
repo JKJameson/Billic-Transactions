@@ -223,13 +223,23 @@ class Transactions {
 					$db->q('UPDATE `transactions` SET `attachments` = ? WHERE `id` = ?', $attachments, $transaction['id']);
 				}
 			}
+			$_POST = json_decode(base64_decode($_POST['search_post']) , true);
 		}
 		if (isset($_GET['Attachment'])) {
 			$billic->disable_content();
 			$attachment = basename($_GET['Attachment']);
-			$im = new imagick('../attachments/transactions/'.$attachment.'[0]');
+			$im = new imagick();
+			if (!isset($_GET['Preview']))
+				$im->setResolution(150, 150);
+			$im->readImage('../attachments/transactions/'.$attachment.'[0]');
 			$im->setImageFormat('jpg');
-			$im->thumbnailImage(150, 0);
+			if (isset($_GET['Preview']))
+				$im->thumbnailImage(150, 0);
+			$seconds_to_cache = 86400;
+			$ts = gmdate("D, d M Y H:i:s", time() + $seconds_to_cache) . " GMT";
+			header("Expires: $ts");
+			header("Pragma: cache");
+			header("Cache-Control: max-age=$seconds_to_cache");
 			$im = $im->flattenImages();
 			header('Content-Type: image/jpeg');
 			echo $im;
@@ -362,7 +372,7 @@ class Transactions {
 				} else {
 					$attachments = explode('|', $transaction['attachments']);
 					foreach($attachments as $attachment) {
-						$details .= '<img src="Attachment/'.$attachment.'/"><br>';	
+						$details .= '<img src="Preview/Yes/Attachment/'.$attachment.'/" onClick="openPreview(\''.safe($attachment).'\')"><br>';	
 					}
 				}
 				
@@ -377,6 +387,16 @@ class Transactions {
 			echo '</td><td>' . ($transaction['eu'] == 1 ? '<i class="icon-check-mark"></i>' : '<i class="icon-remove"></i>') . '</td><td>' . $transaction['gateway'] . '</td><td>' . $transaction['transid'] . '</td><td>' . ($transaction['resale'] == 1 ? '<i class="icon-check-mark"></i>' : '<i class="icon-remove"></i>') . '</td></tr>';
 		}
 		echo '</table></form>';
+		?>
+<script>
+	function openPreview(image) {
+		$("#transactionFullPreview").remove();
+		var imgContainer = $('<div />',{ id: 'transactionFullPreview', style: 'background-color: rgba(0,0,0,.7);width:100%;height:100%;position:fixed;top:0;z-index:9999999;text-align:center;display:none' }).appendTo($('body'));
+		var img = $('<img />', { src: 'Attachment/'+image+'/', style: 'max-width:100%;max-height:100%', onclick: '$( this ).parent().fadeOut();' }).appendTo(imgContainer);
+		imgContainer.fadeIn();
+	}
+</script>
+		<?php
 	}
 	function exportdata_submodule() {
 		global $billic, $db;
