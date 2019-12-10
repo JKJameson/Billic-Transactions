@@ -195,6 +195,17 @@ class Transactions {
 				} else {
 					
 					$filename = basename($_FILES['transaction']['name'][$key]);
+					
+					if ($transaction['transid']=='') {
+						preg_match_all('~([0-9]+)~', $filename, $numbers);
+						$largestNumber = 0;
+						foreach($numbers[1] as $number) {
+							if ($number > $largestNumber)
+								$largestNumber = $number;
+						}
+						$db->q('UPDATE `transactions` SET `transid` = ? WHERE `id` = ?', $largestNumber, $transaction['id']);
+					}
+					
 					$filename = str_replace(' ', '_', $filename);
 					$safe_chars = 'a b c d e f g h i j k l m n o p q r s t u v w x y z 0 1 2 3 4 5 6 7 8 9 _ .';
 					$safe_chars = explode(' ', $safe_chars);
@@ -209,6 +220,7 @@ class Transactions {
 					$filename = preg_replace('/([\.]+)/', '.', $filename);
 					$filename = preg_replace('/([_]+)/', '_', $filename);
 					$filename = $key . '_' . basename($filename);
+					
 					if (!is_dir('../attachments/transactions/'))
 						mkdir('../attachments/transactions/') or err('Failed to create the folder ../attachments/transactions/');
 					move_uploaded_file($tmp_name, '../attachments/transactions/' . $filename);
