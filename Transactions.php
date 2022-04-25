@@ -203,7 +203,8 @@ class Transactions {
 							if ($number > $largestNumber)
 								$largestNumber = $number;
 						}
-						$db->q('UPDATE `transactions` SET `transid` = ? WHERE `id` = ?', $largestNumber, $transaction['id']);
+						if ($transaction['transid']==='' && $largestNumber>0)
+							$db->q('UPDATE `transactions` SET `transid` = ? WHERE `id` = ?', $largestNumber, $transaction['id']);
 					}
 					
 					$filename = str_replace(' ', '_', $filename);
