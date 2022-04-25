@@ -203,7 +203,7 @@ class Transactions {
 							if ($number > $largestNumber)
 								$largestNumber = $number;
 						}
-						if ($transaction['transid']==='' && $largestNumber>0)
+						if ($largestNumber>0)
 							$db->q('UPDATE `transactions` SET `transid` = ? WHERE `id` = ?', $largestNumber, $transaction['id']);
 					}
 					
@@ -417,45 +417,123 @@ class Transactions {
 			echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.4.0/css/bootstrap-datepicker.min.css">';
 			echo '<script>addLoadEvent(function() { $.getScript( "https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.4.0/js/bootstrap-datepicker.min.js", function( data, textStatus, jqxhr ) { $( "#date_start" ).datepicker({ format: "yyyy-mm-dd" }); $( "#date_end" ).datepicker({ format: "yyyy-mm-dd" }); }); });</script>';
 			echo '<form method="POST">';
-			echo '<table class="table table-striped" style="width: 300px;"><tr><th colspan="2">Select date range</th></tr>';
+			echo '<table class="table table-striped" style="width: 300px;"><tr><th colspan="2">Export List</th></tr>';
 			echo '<tr><td>From</td><td><input type="text" class="form-control" name="date_start" id="date_start" value="' . date('Y') . '-01-01"></td></tr>';
 			echo '<tr><td>To</td><td><input type="text" class="form-control" name="date_end" id="date_end" value="' . date('Y') . '-12-' . date('t', mktime(0, 0, 0, 12, 1, date('Y'))) . '"></td></tr>';
 			echo '<tr><td colspan="2"><input type="checkbox" name="only_expenditures" value="1"> Only export expenditures</td></tr>';
-			echo '<tr><td colspan="2" align="right"><input type="submit" class="btn btn-default" name="generate" value="Generate &raquo"></td></tr>';
+			echo '<tr><td colspan="2" align="right"><input type="submit" class="btn btn-default" name="generate" value="Generate List &raquo;"></td></tr>';
 			echo '</table>';
 			echo '</form>';
+			
+			echo '<form method="POST">';
+			echo '<table class="table table-striped" style="width: 300px;"><tr><th colspan="2">Download Documents</th></tr>';
+			echo '<tr><td>From</td><td><input type="text" class="form-control" name="date_start" id="date_start" value="' . date('Y') . '-01-01"></td></tr>';
+			echo '<tr><td>To</td><td><input type="text" class="form-control" name="date_end" id="date_end" value="' . date('Y') . '-12-' . date('t', mktime(0, 0, 0, 12, 1, date('Y'))) . '"></td></tr>';
+			echo '<tr><td colspan="2" align="right"><input type="submit" class="btn btn-default" name="download" value="Download &raquo;"></td></tr>';
+			echo '</table>';
+			echo '</form>';
+			
 			return;
 		}
-		$date = date_create_from_format('Y-m-d', $_POST['date_start']);
-		$date->setTime(0, 0, 0);
-		$date_start = $date->getTimestamp();
-		$date = date_create_from_format('Y-m-d', $_POST['date_end']);
-		$date->setTime(0, 0, 0);
-		$date_end = ($date->getTimestamp() + 86399);
-		ob_end_clean();
-		ob_start();
-		echo "Date,Description,Type,Amount,VAT Rate,Intra-EU,Gateway,Transaction ID,Resale\r\n";
-		$extraSQL = '';
-		if ($_POST['only_expenditures'] == 1) $extraSQL.= ' AND `amount` < 0';
-		$transactions = $db->q('SELECT `date`, `description`, `type`, `amount`, `vatrate`, `eu`, `gateway`, `transid`, `resale` FROM `transactions` WHERE `date` >= ? AND `date` <= ?' . $extraSQL . ' ORDER BY `date` ASC', $date_start, $date_end);
-		foreach ($transactions as $transaction) {
-			$transaction['date'] = date('Y-m-d', $transaction['date']);
-			if ($_POST['only_expenditures'] == 1) $transaction['amount'] = abs($transaction['amount']);
-			if ($transaction['eu'] == 1) $transaction['eu'] = 'Yes';
-			else $transaction['eu'] = 'No';
-			if ($transaction['resale'] == 1) $transaction['resale'] = 'Yes';
-			else $transaction['resale'] = 'No';
-			echo str_replace("\n", '', str_replace("\r", '', implode(',', $transaction))) . "\r\n";
+		if (isset($_POST['download'])) {
+			$date = date_create_from_format('Y-m-d', $_POST['date_start']);
+			$date->setTime(0, 0, 0);
+			$date_start = $date->getTimestamp();
+			$date = date_create_from_format('Y-m-d', $_POST['date_end']);
+			$date->setTime(0, 0, 0);
+			$date_end = ($date->getTimestamp() + 86399);
+			define('DISABLE_FOOTER', true);
+			$output = ob_get_contents();
+			ob_end_clean();
+			ob_start();
+			
+			$zip = new ZipArchive();
+			$filename = "../attachments/transactions/download_".time().".zip";
+			touch($filename) or err('Permissions of folder ../attachments/transactions is wrong!');
+			if ($zip->open($filename, ZipArchive::OVERWRITE)!==TRUE) err("cannot open <$filename> for writing");
+
+			$addedDirs = [];
+
+			$transactions = $db->q('SELECT `date`, `attachments`, `description`, `type`, `amount`, `vatrate`, `eu`, `gateway`, `transid`, `resale` FROM `transactions` WHERE `date` >= ? AND `date` <= ? AND `amount` < 0 ORDER BY `date` ASC', $date_start, $date_end);
+			foreach ($transactions as $transaction) {
+				$transaction['date'] = date('Y-m-d', $transaction['date']);
+				$transaction['amount'] = abs($transaction['amount']);
+				if ($transaction['eu'] == 1) $transaction['eu'] = 'Yes';
+				else $transaction['eu'] = 'No';
+				if ($transaction['resale'] == 1) $transaction['resale'] = 'Yes';
+				else $transaction['resale'] = 'No';
+				//echo str_replace("\n", '', str_replace("\r", '', implode(',', $transaction))) . "\r\n";
+				
+				if (!empty($transaction['attachments'])) {
+					$dir = $transaction['description'];
+					if (!in_array($dir, $addedDirs)) {
+						$zip->addEmptyDir($dir) or err("Failed to add folder <$dir> to zip");
+						$addedDirs[] = $dir;
+					}
+					$i = 0;
+					foreach(explode('|', $transaction['attachments']) as $attachment) {
+						$attachment = basename($attachment);
+						$fileadd = '../attachments/transactions/'.$attachment;
+						$extra = '';
+						if ($i>0) $extra += ' '.($i+2);
+						$ext = explode('.', $attachment);
+						unset($ext[0]);
+						$ext = implode('.', $ext);
+						$zip->addFile($fileadd, "$dir/{$transaction['date']} ${transaction['transid']}$extra.$ext") or err("failed to add <$fileadd>");
+						$i++;
+					}
+				}
+			}
+			
+			$stdout = ob_get_contents();
+			ob_end_clean();
+			if (!empty($stdout)) {
+				@unlink($filename);
+				fatal_error($stdout);
+			}
+
+			$zip->close();
+			header('Content-Disposition: attachment; filename='.basename($filename));
+			header('Content-Type: application/force-download');
+			header('Content-Type: application/octet-stream');
+			header('Content-Type: application/download');
+			header('Content-Length: ' . filesize($filename));
+			readfile($filename);
+			@unlink($filename);
+			exit;
 		}
-		define('DISABLE_FOOTER', true);
-		$output = ob_get_contents();
-		ob_end_clean();
-		header('Content-Disposition: attachment; filename=exported-' . strtolower($_GET['Module']) . '-' . time() . '.csv');
-		header('Content-Type: application/force-download');
-		header('Content-Type: application/octet-stream');
-		header('Content-Type: application/download');
-		header('Content-Length: ' . strlen($output));
-		echo $output;
-		exit;
+		if (isset($_POST['export'])) {
+			$date = date_create_from_format('Y-m-d', $_POST['date_start']);
+			$date->setTime(0, 0, 0);
+			$date_start = $date->getTimestamp();
+			$date = date_create_from_format('Y-m-d', $_POST['date_end']);
+			$date->setTime(0, 0, 0);
+			$date_end = ($date->getTimestamp() + 86399);
+			ob_end_clean();
+			ob_start();
+			echo "Date,Description,Type,Amount,VAT Rate,Intra-EU,Gateway,Transaction ID,Resale\r\n";
+			$extraSQL = '';
+			if ($_POST['only_expenditures'] == 1) $extraSQL.= ' AND `amount` < 0';
+			$transactions = $db->q('SELECT `date`, `description`, `type`, `amount`, `vatrate`, `eu`, `gateway`, `transid`, `resale` FROM `transactions` WHERE `date` >= ? AND `date` <= ?' . $extraSQL . ' ORDER BY `date` ASC', $date_start, $date_end);
+			foreach ($transactions as $transaction) {
+				$transaction['date'] = date('Y-m-d', $transaction['date']);
+				if ($_POST['only_expenditures'] == 1) $transaction['amount'] = abs($transaction['amount']);
+				if ($transaction['eu'] == 1) $transaction['eu'] = 'Yes';
+				else $transaction['eu'] = 'No';
+				if ($transaction['resale'] == 1) $transaction['resale'] = 'Yes';
+				else $transaction['resale'] = 'No';
+				echo str_replace("\n", '', str_replace("\r", '', implode(',', $transaction))) . "\r\n";
+			}
+			define('DISABLE_FOOTER', true);
+			$output = ob_get_contents();
+			ob_end_clean();
+			header('Content-Disposition: attachment; filename=exported-' . strtolower($_GET['Module']) . '-' . time() . '.csv');
+			header('Content-Type: application/force-download');
+			header('Content-Type: application/octet-stream');
+			header('Content-Type: application/download');
+			header('Content-Length: ' . strlen($output));
+			echo $output;
+			exit;
+		}
 	}
 }
